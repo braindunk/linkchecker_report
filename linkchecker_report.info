@@ -1,0 +1,7 @@
+name = Link checker report for Drupal 7
+description = "Send email report listing off broken links to the administrator on cron runs. Updated to Drupal 7 by Braindunk."
+core = 7.x
+package = Braindunk
+version = 7.x-1.0
+configure = admin/config/content/linkchecker/report
+dependencies[] = linkchecker

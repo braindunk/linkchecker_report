@@ -1,0 +1,113 @@
+<?php
+
+/**
+ * Implements hook_menu().
+ */
+function linkchecker_report_menu() {
+  //$items = array();
+  $items['admin/config/content/linkchecker-report'] = array(
+    'title' => t('Link checker report email'),
+    'description' => t('Configure the frequency and recipient email addresses for link checker report emails.'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('linkchecker_report_admin_settings_form'),
+    'access arguments' => array('administer linkchecker'),
+  );
+  return $items;
+}
+
+/**
+ * Admin settings form.
+ */
+function linkchecker_report_admin_settings_form($form_state) {
+  //$form = array();
+  $form['report_settings'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Report settings'),
+    '#collapsible' => FALSE,
+  );
+  $form['report_settings']['linkchecker_report_frequency'] = array(
+    '#type' => 'select',
+    '#options' => array(
+      '60' => 'Every minute',
+      '3600' => 'Every hour',
+      (string) (3600*24) => 'Every day',
+      (string) (3600*24*7) => 'Every week',
+    ),
+    '#title' => t('Frequency'),
+    '#default_value' => variable_get('linkchecker_report_frequency', 3600*24),
+  );
+  $form['report_settings']['linkchecker_report_email'] = array(
+    '#type' => 'textfield',
+    '#default_value' => variable_get('linkchecker_report_email', variable_get('site_mail', '')),
+    '#title' => t('Email address'),
+    '#description' => t('The email address the Link checker report will be sent to.'),
+  );
+  $form['buttons']['submit'] = array('#type' => 'submit', '#value' => t('Save configuration'));
+
+  return $form;
+}
+
+/*
+ * Implementation of hook_submit for settings form
+ */
+function linkchecker_report_admin_settings_form_submit($form, &$form_state) {
+  $freq = $form_state['values']['linkchecker_report_frequency'];
+  $email = $form_state['values']['linkchecker_report_email'];
+  variable_set('linkchecker_report_frequency', $freq);
+  variable_set('linkchecker_report_email', $email);
+  drupal_set_message('Module settings saved.');
+}
+
+
+/**
+ * Implements hook_cron().
+ */
+function linkchecker_report_cron() {
+  $now = time();
+  $last_sent = (int) variable_get('linkchecker_report_last_sent', 0);
+  $threshold = (int) variable_get('linkchecker_report_frequency', 3600*24);
+  global $base_url;
+
+  if (($now - $last_sent) > $threshold) {
+	$my_module = 'linkchecker_report';
+	$my_mail_token = microtime();
+	$from = variable_get('system_mail', '<info@braindunk.com>');
+	$message = array(
+	  'id' => $my_module . '_' . $my_mail_token,
+	  'to' => variable_get('linkchecker_report_email', variable_get('site_mail', '')),
+	  'from' => $from,
+	  'module' => $my_module,
+	  'key' => $my_mail_token,
+	  'subject' => t('Link checker report for') . ' ' . date('M j Y', $now),
+	  'body' => array('<html><head><base href="' . $base_url . '" /></head><body>' . _linkchecker_report_generate_report_email() . '</body></html>'),
+	  'headers' => array(
+		  'From' => $from, 
+		  'Sender' => $from, 
+		  'Return-Path' => $from,
+          'MIME-Version' => '1.0',
+          'Content-Type' => 'text/html;charset=utf-8',
+	  ),
+    );
+    if (!empty($message['to']) && !empty($message['body'])) {  
+	  $system = drupal_mail_system($my_module, $my_mail_token);
+	  $message = $system->format($message);
+	  $mail_success = $system->mail($message);
+      variable_set('linkchecker_report_last_sent', $now);
+      drupal_set_message(t('Link checker report sent to: ') . $message['to']);
+    }
+  }
+}
+
+/**
+ * Generate the report markup.
+ */
+function _linkchecker_report_generate_report_email() {
+  global $base_url;
+  module_load_include('inc', 'linkchecker', 'linkchecker.pages');
+  // print render(linkchecker_admin_report_page());
+  $report = linkchecker_admin_report_page();
+  $rendered = render($report);
+  $rendered = str_replace('/admin/config', '/admin/reports/linkchecker', $rendered);
+  $rendered = str_replace('/new-home', '/admin/reports/linkchecker', $rendered);
+  return '<h2><a href="' . $base_url . '/admin/reports/linkchecker" target="_blank">Broken links report</a> for ' . date('M j Y') . ": </h2>\n" . $rendered;
+}
